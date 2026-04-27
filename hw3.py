@@ -79,7 +79,52 @@ def fk(theta):
         - xi_array (numpy.ndarray of shape (6, N)): an array with the twists
           stacked in its columns.
     """
-    # YOUR CODE HERE
+    theta = np.asarray(theta, dtype=np.float64)
+    if theta.shape != (6,):
+        raise TypeError("theta must have shape (6,)")
+
+    l0 = 1.0
+    l1 = 1.0
+
+    # Joint axis points in the space frame at the home configuration.
+    q_w = np.array([0.0, l1, l0], dtype=np.float64)
+
+    # Revolute twists: xi = [v; w], v = -w x q.
+    w1 = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    q1 = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+    xi_1 = np.hstack((-np.cross(w1, q1), w1))
+
+    w2 = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    q2 = np.array([0.0, 0.0, l0], dtype=np.float64)
+    xi_2 = np.hstack((-np.cross(w2, q2), w2))
+
+    # Prismatic twist: xi = [u; 0], where u is the sliding direction.
+    u3 = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    xi_3 = np.hstack((u3, np.zeros(3, dtype=np.float64)))
+
+    w4 = np.array([0.0, 0.0, 1.0], dtype=np.float64)
+    xi_4 = np.hstack((-np.cross(w4, q_w), w4))
+
+    w5 = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    xi_5 = np.hstack((-np.cross(w5, q_w), w5))
+
+    w6 = np.array([0.0, 1.0, 0.0], dtype=np.float64)
+    xi_6 = np.hstack((-np.cross(w6, q_w), w6))
+
+    xi_array = np.array([xi_1, xi_2, xi_3, xi_4, xi_5, xi_6], dtype=np.float64).T
+
+    # Home pose T_ST(0): tool frame at q_w with identity orientation.
+    gst0 = np.array(
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, l1],
+            [0.0, 0.0, 1.0, l0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+
+    g = np.matmul(prod_exp(xi_array, theta), gst0)
 
     # Return the required quantities.
     return g, xi_array
