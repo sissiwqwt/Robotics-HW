@@ -119,6 +119,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def is_key_down(keys: dict[int, int], ch: str) -> bool:
+    return any(
+        ord(c) in keys and keys[ord(c)] & p.KEY_IS_DOWN for c in (ch.lower(), ch.upper())
+    )
+
+
+def is_key_triggered(keys: dict[int, int], ch: str) -> bool:
+    return any(
+        ord(c) in keys and keys[ord(c)] & p.KEY_WAS_TRIGGERED for c in (ch.lower(), ch.upper())
+    )
+
+
 def main():
     args = parse_args()
     urdf_path = os.path.abspath(args.urdf)
@@ -134,7 +146,12 @@ def main():
     info = load_robot(urdf_path)
     logger_id = None
     if args.record_mp4:
-        logger_id = p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, args.record_mp4)
+        output_path = os.path.abspath(args.record_mp4)
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+        logger_id = p.startStateLogging(p.STATE_LOGGING_VIDEO_MP4, output_path)
+        print(f"Recording MP4 to: {output_path}")
 
     # Better camera view for desktop demo recording.
     p.resetDebugVisualizerCamera(
@@ -157,101 +174,102 @@ def main():
     print(f"Arm joints used for IK: {list(zip(info.arm_joint_indices, info.arm_joint_names))}")
     print(f"End-effector link index: {info.ee_link_index}\n")
 
-    while True:
-        keys = p.getKeyboardEvents()
+    try:
+        while True:
+            keys = p.getKeyboardEvents()
 
-        dpos = np.zeros(3, dtype=np.float64)
-        droll = dpitch = dyaw = 0.0
+            dpos = np.zeros(3, dtype=np.float64)
+            droll = dpitch = dyaw = 0.0
 
-        # Translation controls.
-        if ord("w") in keys and keys[ord("w")] & p.KEY_IS_DOWN:
-            dpos[0] += args.pos_step
-        if ord("s") in keys and keys[ord("s")] & p.KEY_IS_DOWN:
-            dpos[0] -= args.pos_step
-        if ord("a") in keys and keys[ord("a")] & p.KEY_IS_DOWN:
-            dpos[1] += args.pos_step
-        if ord("d") in keys and keys[ord("d")] & p.KEY_IS_DOWN:
-            dpos[1] -= args.pos_step
-        if ord("r") in keys and keys[ord("r")] & p.KEY_IS_DOWN:
-            dpos[2] += args.pos_step
-        if ord("f") in keys and keys[ord("f")] & p.KEY_IS_DOWN:
-            dpos[2] -= args.pos_step
+            # Translation controls.
+            if is_key_down(keys, "w"):
+                dpos[0] += args.pos_step
+            if is_key_down(keys, "s"):
+                dpos[0] -= args.pos_step
+            if is_key_down(keys, "a"):
+                dpos[1] += args.pos_step
+            if is_key_down(keys, "d"):
+                dpos[1] -= args.pos_step
+            if is_key_down(keys, "r"):
+                dpos[2] += args.pos_step
+            if is_key_down(keys, "f"):
+                dpos[2] -= args.pos_step
 
-        # Orientation controls.
-        if ord("u") in keys and keys[ord("u")] & p.KEY_IS_DOWN:
-            droll += rot_step_rad
-        if ord("o") in keys and keys[ord("o")] & p.KEY_IS_DOWN:
-            droll -= rot_step_rad
-        if ord("i") in keys and keys[ord("i")] & p.KEY_IS_DOWN:
-            dpitch += rot_step_rad
-        if ord("k") in keys and keys[ord("k")] & p.KEY_IS_DOWN:
-            dpitch -= rot_step_rad
-        if ord("j") in keys and keys[ord("j")] & p.KEY_IS_DOWN:
-            dyaw += rot_step_rad
-        if ord("l") in keys and keys[ord("l")] & p.KEY_IS_DOWN:
-            dyaw -= rot_step_rad
+            # Orientation controls.
+            if is_key_down(keys, "u"):
+                droll += rot_step_rad
+            if is_key_down(keys, "o"):
+                droll -= rot_step_rad
+            if is_key_down(keys, "i"):
+                dpitch += rot_step_rad
+            if is_key_down(keys, "k"):
+                dpitch -= rot_step_rad
+            if is_key_down(keys, "j"):
+                dyaw += rot_step_rad
+            if is_key_down(keys, "l"):
+                dyaw -= rot_step_rad
 
-        if np.linalg.norm(dpos) > 0:
-            target_pos += dpos
+            if np.linalg.norm(dpos) > 0:
+                target_pos += dpos
 
-        if any(abs(v) > 0 for v in (droll, dpitch, dyaw)):
-            delta_quat = p.getQuaternionFromEuler([droll, dpitch, dyaw])
-            target_quat = quat_mul(delta_quat, target_quat)
+            if any(abs(v) > 0 for v in (droll, dpitch, dyaw)):
+                delta_quat = p.getQuaternionFromEuler([droll, dpitch, dyaw])
+                target_quat = quat_mul(delta_quat, target_quat)
 
-        # Utility controls (on key trigger).
-        if ord("z") in keys and keys[ord("z")] & p.KEY_WAS_TRIGGERED:
-            ee_state = p.getLinkState(
-                info.robot_id, info.ee_link_index, computeForwardKinematics=True
-            )
-            target_pos = np.array(ee_state[4], dtype=np.float64)
-            target_quat = tuple(ee_state[5])
-            print("Reset target pose to current EE pose.")
+            # Utility controls (on key trigger).
+            if is_key_triggered(keys, "z"):
+                ee_state = p.getLinkState(
+                    info.robot_id, info.ee_link_index, computeForwardKinematics=True
+                )
+                target_pos = np.array(ee_state[4], dtype=np.float64)
+                target_quat = tuple(ee_state[5])
+                print("Reset target pose to current EE pose.")
 
-        if ord("p") in keys and keys[ord("p")] & p.KEY_WAS_TRIGGERED:
-            ee_state = p.getLinkState(
-                info.robot_id, info.ee_link_index, computeForwardKinematics=True
-            )
-            ee_pos = np.array(ee_state[4])
-            ee_rpy = p.getEulerFromQuaternion(ee_state[5])
-            tgt_rpy = p.getEulerFromQuaternion(target_quat)
-            print("--- Status ---")
-            print("Target pos:", np.round(target_pos, 4), "Target rpy:", np.round(tgt_rpy, 4))
-            print("EE     pos:", np.round(ee_pos, 4), "EE     rpy:", np.round(ee_rpy, 4))
+            if is_key_triggered(keys, "p"):
+                ee_state = p.getLinkState(
+                    info.robot_id, info.ee_link_index, computeForwardKinematics=True
+                )
+                ee_pos = np.array(ee_state[4])
+                ee_rpy = p.getEulerFromQuaternion(ee_state[5])
+                tgt_rpy = p.getEulerFromQuaternion(target_quat)
+                print("--- Status ---")
+                print("Target pos:", np.round(target_pos, 4), "Target rpy:", np.round(tgt_rpy, 4))
+                print("EE     pos:", np.round(ee_pos, 4), "EE     rpy:", np.round(ee_rpy, 4))
 
-        if ord("q") in keys and keys[ord("q")] & p.KEY_WAS_TRIGGERED:
-            break
+            if is_key_triggered(keys, "q"):
+                break
 
-        ik_solution = p.calculateInverseKinematics(
-            info.robot_id,
-            info.ee_link_index,
-            targetPosition=target_pos.tolist(),
-            targetOrientation=target_quat,
-            lowerLimits=info.lower_limits,
-            upperLimits=info.upper_limits,
-            jointRanges=info.joint_ranges,
-            restPoses=info.rest_poses,
-            maxNumIterations=100,
-            residualThreshold=1e-5,
-        )
-
-        for i, joint_idx in enumerate(info.arm_joint_indices):
-            target_angle = ik_solution[joint_idx]
-            p.setJointMotorControl2(
-                bodyUniqueId=info.robot_id,
-                jointIndex=joint_idx,
-                controlMode=p.POSITION_CONTROL,
-                targetPosition=target_angle,
-                force=200,
-                positionGain=0.12,
-                velocityGain=1.0,
+            ik_solution = p.calculateInverseKinematics(
+                info.robot_id,
+                info.ee_link_index,
+                targetPosition=target_pos.tolist(),
+                targetOrientation=target_quat,
+                lowerLimits=info.lower_limits,
+                upperLimits=info.upper_limits,
+                jointRanges=info.joint_ranges,
+                restPoses=info.rest_poses,
+                maxNumIterations=100,
+                residualThreshold=1e-5,
             )
 
-        p.stepSimulation()
-        time.sleep(args.dt)
+            for joint_idx in info.arm_joint_indices:
+                target_angle = ik_solution[joint_idx]
+                p.setJointMotorControl2(
+                    bodyUniqueId=info.robot_id,
+                    jointIndex=joint_idx,
+                    controlMode=p.POSITION_CONTROL,
+                    targetPosition=target_angle,
+                    force=200,
+                    positionGain=0.12,
+                    velocityGain=1.0,
+                )
 
-    if logger_id is not None:
-        p.stopStateLogging(logger_id)
-    p.disconnect()
+            p.stepSimulation()
+            time.sleep(args.dt)
+    finally:
+        if logger_id is not None:
+            p.stopStateLogging(logger_id)
+        p.disconnect()
 
 
 if __name__ == "__main__":
