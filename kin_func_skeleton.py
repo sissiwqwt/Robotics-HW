@@ -116,8 +116,16 @@ def skew_3d(omega):
     Returns:
     omega_hat - (3,3) ndarray: the corresponding skew symmetric matrix
     """
+    if not omega.shape == (3,):
+        raise TypeError("omega must be a 3-vector")
 
-    # YOUR CODE HERE
+    omega_hat = np.zeros((3, 3))
+    omega_hat[0, 1] = -omega[2]
+    omega_hat[0, 2] = omega[1]
+    omega_hat[1, 0] = omega[2]
+    omega_hat[1, 2] = -omega[0]
+    omega_hat[2, 0] = -omega[1]
+    omega_hat[2, 1] = omega[0]
 
     return omega_hat
 
@@ -132,11 +140,17 @@ def rotation_3d(omega, theta):
 
     Returns:
     rot - (3,3) ndarray: the resulting rotation matrix
-
-    R = I + sin(theta) * omega_hat + (1 - cos(theta)) * np.dot(omega_hat, omega_hat)
     """
+    if not omega.shape == (3,):
+        raise TypeError("omega must be a 3-vector")
 
-    # YOUR CODE HERE
+    omega_hat = skew_3d(omega)
+
+    R = (
+        np.eye(3)
+        + np.sin(theta) * omega_hat
+        + (1 - np.cos(theta)) * np.dot(omega_hat, omega_hat)
+    )
 
     return R
 
@@ -151,8 +165,15 @@ def hat_3d(xi):
     Returns:
     xi_hat - (4,4) ndarray: the corresponding 4x4 matrix
     """
+    if not xi.shape == (6,):
+        raise TypeError("xi must be a 6-vector")
 
-    # YOUR CODE HERE
+    v = xi[0:3]
+    omega = xi[3:6]
+
+    xi_hat = np.zeros((4, 4))
+    xi_hat[0:3, 0:3] = skew_3d(omega)
+    xi_hat[0:3, 3] = v
 
     return xi_hat
 
@@ -165,13 +186,45 @@ def homog_3d(xi, theta):
     Args:
     xi - (6,) ndarray: the 3D twist
     theta: the joint displacement
+
     Returns:
-    g - (4,4) ndarary: the resulting homogeneous transformation matrix
+    g - (4,4) ndarray: the resulting homogeneous transformation matrix
     """
+    if not xi.shape == (6,):
+        raise TypeError("xi must be a 6-vector")
 
-    # YOUR CODE HERE
+    v = xi[0:3]
+    omega = xi[3:6]
 
-    # YOUR CODE HERE
+    g = np.eye(4)
+
+    omega_norm = np.linalg.norm(omega)
+
+    if np.isclose(omega_norm, 0.0):
+        # Pure translation / prismatic joint
+        R = np.eye(3)
+        p = v * theta
+    else:
+        # General case. The given omega may not be unit length.
+        omega_hat = skew_3d(omega)
+
+        angle = omega_norm * theta
+        omega_unit = omega / omega_norm
+        omega_unit_hat = skew_3d(omega_unit)
+
+        R = rotation_3d(omega_unit, angle)
+
+        # Integral of exp([omega] s) v ds from 0 to theta.
+        V_matrix = (
+            theta * np.eye(3)
+            + ((1 - np.cos(angle)) / (omega_norm ** 2)) * omega_hat
+            + ((angle - np.sin(angle)) / (omega_norm ** 3)) * np.dot(omega_hat, omega_hat)
+        )
+
+        p = np.dot(V_matrix, v)
+
+    g[0:3, 0:3] = R
+    g[0:3, 3] = p
 
     return g
 
@@ -188,8 +241,16 @@ def prod_exp(xi, theta):
     Returns:
     g - (4,4) ndarray: the resulting homogeneous transformation matrix
     """
+    if xi.shape[0] != 6:
+        raise TypeError("xi must have shape (6, N)")
 
-    # YOUR CODE HERE
+    if theta.shape != (xi.shape[1],):
+        raise TypeError("theta must have shape (N,)")
+
+    g = np.eye(4)
+
+    for i in range(xi.shape[1]):
+        g = np.dot(g, homog_3d(xi[:, i], theta[i]))
 
     return g
 
