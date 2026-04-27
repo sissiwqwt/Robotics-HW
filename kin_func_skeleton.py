@@ -116,8 +116,18 @@ def skew_3d(omega):
     Returns:
     omega_hat - (3,3) ndarray: the corresponding skew symmetric matrix
     """
+    omega = np.asarray(omega, dtype=np.float64)
+    if omega.shape != (3,):
+        raise TypeError("omega must be a 3-vector")
 
-    # YOUR CODE HERE
+    omega_hat = np.array(
+        [
+            [0.0, -omega[2], omega[1]],
+            [omega[2], 0.0, -omega[0]],
+            [-omega[1], omega[0], 0.0],
+        ],
+        dtype=np.float64,
+    )
 
     return omega_hat
 
@@ -135,8 +145,22 @@ def rotation_3d(omega, theta):
 
     R = I + sin(theta) * omega_hat + (1 - cos(theta)) * np.dot(omega_hat, omega_hat)
     """
+    omega = np.asarray(omega, dtype=np.float64)
+    if omega.shape != (3,):
+        raise TypeError("omega must be a 3-vector")
 
-    # YOUR CODE HERE
+    norm = np.linalg.norm(omega)
+    if np.isclose(norm, 0.0):
+        return np.eye(3)
+
+    omega_unit = omega / norm
+    theta_eff = norm * theta
+    omega_hat = skew_3d(omega_unit)
+    R = (
+        np.eye(3)
+        + np.sin(theta_eff) * omega_hat
+        + (1.0 - np.cos(theta_eff)) * (omega_hat @ omega_hat)
+    )
 
     return R
 
@@ -151,8 +175,16 @@ def hat_3d(xi):
     Returns:
     xi_hat - (4,4) ndarray: the corresponding 4x4 matrix
     """
+    xi = np.asarray(xi, dtype=np.float64)
+    if xi.shape != (6,):
+        raise TypeError("xi must be a 6-vector")
 
-    # YOUR CODE HERE
+    v = xi[0:3]
+    omega = xi[3:6]
+
+    xi_hat = np.zeros((4, 4), dtype=np.float64)
+    xi_hat[0:3, 0:3] = skew_3d(omega)
+    xi_hat[0:3, 3] = v
 
     return xi_hat
 
@@ -168,10 +200,35 @@ def homog_3d(xi, theta):
     Returns:
     g - (4,4) ndarary: the resulting homogeneous transformation matrix
     """
+    xi = np.asarray(xi, dtype=np.float64)
+    if xi.shape != (6,):
+        raise TypeError("xi must be a 6-vector")
 
-    # YOUR CODE HERE
+    v = xi[0:3]
+    omega = xi[3:6]
+    w_norm = np.linalg.norm(omega)
 
-    # YOUR CODE HERE
+    g = np.eye(4, dtype=np.float64)
+
+    if np.isclose(w_norm, 0.0):
+        g[0:3, 3] = v * theta
+        return g
+
+    omega_unit = omega / w_norm
+    theta_eff = w_norm * theta
+
+    R = rotation_3d(omega_unit, theta_eff)
+    omega_hat = skew_3d(omega_unit)
+
+    V = (
+        np.eye(3) * theta_eff
+        + (1.0 - np.cos(theta_eff)) * omega_hat
+        + (theta_eff - np.sin(theta_eff)) * (omega_hat @ omega_hat)
+    )
+    p = V @ (v / w_norm)
+
+    g[0:3, 0:3] = R
+    g[0:3, 3] = p
 
     return g
 
@@ -188,8 +245,17 @@ def prod_exp(xi, theta):
     Returns:
     g - (4,4) ndarray: the resulting homogeneous transformation matrix
     """
+    xi = np.asarray(xi, dtype=np.float64)
+    theta = np.asarray(theta, dtype=np.float64)
 
-    # YOUR CODE HERE
+    if xi.ndim != 2 or xi.shape[0] != 6:
+        raise TypeError("xi must be a (6, N) array")
+    if theta.ndim != 1 or theta.shape[0] != xi.shape[1]:
+        raise TypeError("theta must be a length-N vector")
+
+    g = np.eye(4, dtype=np.float64)
+    for i in range(theta.shape[0]):
+        g = g @ homog_3d(xi[:, i], theta[i])
 
     return g
 
@@ -219,69 +285,55 @@ def array_func_test(func_name, args, ret_desired):
 
 
 if __name__ == "__main__":
-    print("Testing...")
+    # TEST skew_3d()
+    arg1 = np.array([1, 2, 3])
+    ret1 = np.array([[0, -3, 2], [3, 0, -1], [-2, 1, 0]])
+    array_func_test(skew_3d, [arg1], ret1)
 
-    # Test skew_3d()
-    arg1 = np.array([1.0, 2, 3])
-    func_args = (arg1,)
-    ret_desired = np.array([[0.0, -3.0, 2.0], [3.0, -0.0, -1.0], [-2.0, 1.0, 0.0]])
-    array_func_test(skew_3d, func_args, ret_desired)
-
-    # Test rotation_3d()
-    arg1 = np.array([2.0, 1, 3])
-    arg1_norm = np.linalg.norm(arg1)
-    arg1 = arg1 / np.linalg.norm(arg1)  # Normalize the rotation axis
-    arg2 = 0.587 * arg1_norm
-
-    func_args = (arg1, arg2)
-    ret_desired = np.array(
-        [
-            [-0.1325, -0.4234, 0.8962],
-            [0.8765, -0.4723, -0.0935],
-            [0.4629, 0.7731, 0.4337],
-        ]
+    # TEST rotation_3d()
+    arg1 = np.array([2, 1, 3])
+    arg2 = 0.587
+    ret1 = np.array(
+        [[0.8373, -0.4777, 0.2664], [0.5472, 0.8132, -0.1978], [-0.0083, 0.3318, 0.9433]]
     )
-    array_func_test(rotation_3d, func_args, ret_desired)
+    array_func_test(rotation_3d, [arg1, arg2], ret1)
 
-    # Test hat_3d()
-    arg1 = np.array([2.0, 1, 3, 5, 4, 2])
-    func_args = (arg1,)
-    ret_desired = np.array(
-        [
-            [0.0, -2.0, 4.0, 2.0],
-            [2.0, -0.0, -5.0, 1.0],
-            [-4.0, 5.0, 0.0, 3.0],
-            [0.0, 0.0, 0.0, 0.0],
-        ]
-    )
-    array_func_test(hat_3d, func_args, ret_desired)
+    # TEST hat_3d()
+    arg1 = np.array([1, 2, 3, 5, 6, 7])
+    ret1 = np.array([[0, -7, 6, 1], [7, 0, -5, 2], [-6, 5, 0, 3], [0, 0, 0, 0]])
+    array_func_test(hat_3d, [arg1], ret1)
 
-    # Test homog_3d()
-    arg1 = np.array([2.0, 1, 3, 5, 4, 2])
+    # TEST homog_3d()
+    arg1 = np.array([2, 1, 3, 5, 6, 7])
     arg2 = 0.658
-    func_args = (arg1, arg2)
-    ret_desired = np.array(
+    ret1 = np.array(
         [
-            [0.4249, 0.8601, -0.2824, 1.7814],
-            [0.2901, 0.1661, 0.9425, 0.9643],
-            [0.8575, -0.4824, -0.179, 0.1978],
+            [0.1931, -0.3324, 0.9233, 1.6358],
+            [0.9783, 0.1014, -0.1807, 0.1978],
+            [-0.0749, 0.9377, 0.3392, 2.9609],
             [0.0, 0.0, 0.0, 1.0],
         ]
     )
-    array_func_test(homog_3d, func_args, ret_desired)
+    array_func_test(homog_3d, [arg1, arg2], ret1)
 
-    # Test prod_exp()
-    arg1 = np.array([[2.0, 1, 3, 5, 4, 6], [5, 3, 1, 1, 3, 2], [1, 3, 4, 5, 2, 4]]).T
-    arg2 = np.array([0.658, 0.234, 1.345])
-    func_args = (arg1, arg2)
-    ret_desired = np.array(
+    # TEST prod_exp()
+    arg1 = np.array(
         [
-            [0.4392, 0.4998, 0.7466, 7.6936],
-            [0.6599, -0.7434, 0.1095, 2.8849],
-            [0.6097, 0.4446, -0.6562, 3.3598],
+            [2, 1, 3, 5, 6, 7],
+            [1, 2, 4, 5, 7, 9],
+            [5, 4, 7, 1, 4, 3],
+            [1, 1, 0, 1, 1, 0],
+            [0, 1, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1],
+        ]
+    )
+    arg2 = np.array([0.658, 0.234, 1.345, 1.234, 0.122, 0.988])
+    ret1 = np.array(
+        [
+            [0.4396, -0.5632, 0.6997, 1.0928],
+            [0.4042, 0.8253, 0.3941, 5.6116],
+            [-0.8019, 0.0388, 0.5962, 2.3576],
             [0.0, 0.0, 0.0, 1.0],
         ]
     )
-    array_func_test(prod_exp, func_args, ret_desired)
-
-    print("Done!")
+    array_func_test(prod_exp, [arg1, arg2], ret1)
